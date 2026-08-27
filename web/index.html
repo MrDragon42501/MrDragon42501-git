@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAM3 水体分割监控平台</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- HLS 流支持（可选，加载失败会自动回退到原生播放） -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+</head>
+<body>
+
+  <!-- ===== 顶栏：标题 + 站点 + 服务器 + 所有按钮 ===== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <h1>SAM3 水体分割监控平台</h1>
+    </div>
+    <div class="server-config">
+      <label for="siteSelect">站点</label>
+      <select id="siteSelect"></select>
+      <label for="serverAddr">云服务器</label>
+      <input id="serverAddr" type="text" placeholder="http://云服务器地址:端口" spellcheck="false">
+      <button id="btnConnect" class="btn">连接</button>
+      <span class="conn">
+        <span id="connDot" class="dot offline"></span>
+        <span id="connText">未连接</span>
+      </span>
+    </div>
+    <div class="controls">
+      <button id="btnContinuous" class="btn primary">开始连续检测</button>
+      <button id="btnSingle" class="btn">开始单次检测</button>
+      <button id="btnStop" class="btn danger" disabled>中断</button>
+      <button id="btnSettings" class="btn" disabled>设置</button>
+      <span class="task-status">
+        <span id="taskDot" class="dot idle"></span>
+        <span id="taskText">任务空闲</span>
+      </span>
+    </div>
+  </header>
+
+  <!-- ===== 主区域：2×2 网格，一屏可见 ===== -->
+  <main class="main">
+
+    <!-- 上排：实时画面 + 分割框架（1:1） -->
+    <div class="row top-row">
+
+    <!-- 左上：实时拍摄视频 -->
+    <section class="card">
+      <header class="card-header">
+        <h2>实时画面</h2>
+        <span class="tag">摄像头</span>
+      </header>
+      <div class="video-wrap">
+        <canvas id="liveCanvas"></canvas>
+        <div class="video-placeholder" id="livePlaceholder">等待实时画面…</div>
+      </div>
+    </section>
+
+    <!-- 右上：分割框架 -->
+    <section class="card">
+      <div class="info-bar">
+        <div class="info-group">
+          <span class="info-label">平均水位高程</span>
+          <span class="info-value">
+            <span id="avgElevation">--</span><span class="unit">m</span>
+          </span>
+          <span id="demoBadge" class="badge hidden">演示数据</span>
+        </div>
+        <div class="info-group">
+          <span class="info-label">采样开始时间</span>
+          <span class="info-value mono" id="sampleStartTime">--</span>
+        </div>
+      </div>
+      <div class="video-wrap">
+        <video id="resultVideo" autoplay muted loop playsinline></video>
+        <div class="video-placeholder" id="resultPlaceholder">等待分割结果流…</div>
+      </div>
+    </section>
+
+    </div><!-- /top-row -->
+
+    <!-- 下排：历史折线 + 水尺（3:2） -->
+    <div class="row bottom-row">
+
+    <!-- 左下：实时水位折线 -->
+    <section class="card">
+      <header class="card-header">
+        <h2>历史水位</h2>
+        <span class="tag hint">按住拖动平移 · 滚轮缩放</span>
+      </header>
+      <div class="chart-wrap">
+        <canvas id="levelChart"></canvas>
+      </div>
+    </section>
+
+    <!-- 右下：虚拟水尺（可调节） -->
+    <section class="card">
+      <header class="card-header">
+        <h2>虚拟水尺</h2>
+        <span class="tag">可调节</span>
+      </header>
+      <div class="gauge-body">
+        <div class="gauge-rail">
+          <svg id="gaugeSvg" viewBox="0 0 160 400" preserveAspectRatio="none" aria-hidden="true">
+            <g id="gaugeScale"></g>
+            <rect id="gaugeWaterTint" x="60" y="0" width="100" height="0"></rect>
+            <line id="gaugeWaterLine" x1="60" y1="0" x2="160" y2="0"></line>
+          </svg>
+        </div>
+        <div class="gauge-control">
+          <div class="gauge-range">
+            <span class="info-label">有效范围</span>
+            <span class="info-value mono" id="gaugeRange">-- ~ -- m</span>
+          </div>
+          <div class="gauge-input">
+            <label for="gaugeInput">调节水位</label>
+            <input id="gaugeInput" type="number" step="0.01" placeholder="输入水位">
+            <span class="unit">m</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    </div><!-- /bottom-row -->
+
+  </main>
+
+  <!-- ===== 设置页面 ===== -->
+  <div id="settingsPage" class="settings-page hidden">
+    <div class="settings-card">
+      <header class="settings-header">
+        <h2>设置</h2>
+        <button id="btnSettingsClose" class="btn">关闭</button>
+      </header>
+      <nav class="settings-tabs">
+        <button id="tabSites" class="tab active">边坡设置</button>
+        <button id="tabOutput" class="tab">输出文件设置</button>
+        <button id="tabServer" class="tab">服务器设置</button>
+      </nav>
+      <div class="settings-body">
+        <div id="panelSites" class="settings-panel">
+          <div class="settings-upload">
+            <input type="file" id="csvFile" accept=".csv" hidden>
+            <button id="btnUploadCsv" class="btn primary">上传 CSV 标定文件</button>
+            <span class="hint">自动命名为 001.csv、002.csv…</span>
+          </div>
+          <div class="settings-list">
+            <h3>边坡列表</h3>
+            <div id="siteList" class="site-list"></div>
+          </div>
+        </div>
+        <div id="panelOutput" class="settings-panel hidden">
+          <div class="output-setting">
+            <span class="info-label">下载到本地</span>
+            <button id="btnToggleDownload" class="btn">已禁用</button>
+          </div>
+          <div class="output-setting">
+            <span class="info-label">保存目录</span>
+            <button id="btnPickDir" class="btn">选择目录</button>
+            <span id="downloadDirName" class="hint">未选择</span>
+          </div>
+          <button id="btnSaveOutput" class="btn primary">保存设置</button>
+          <p class="hint">启用后，每次分割完成会自动把 all/视频名.zip 写入所选目录（需 Chrome/Edge 支持）。</p>
+        </div>
+        <div id="panelServer" class="settings-panel hidden">
+          <div class="output-setting">
+            <span class="info-label">服务器网址</span>
+            <input id="serverAddrSetting" type="text" placeholder="http://云服务器地址:端口" spellcheck="false">
+          </div>
+          <button id="btnSaveServer" class="btn primary">保存服务器地址</button>
+          <p class="hint">保存后，下次打开页面会自动连接该服务器，无需手动连接。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
