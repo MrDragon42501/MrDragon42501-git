@@ -35,6 +35,7 @@ const CONFIG = {
   apiSitesRename: '/api/sites/rename',
   apiSitesDelete: '/api/sites/delete',
   apiSettings: '/api/settings',
+  apiContinuousSettings: '/api/continuous_settings',
   apiDownloadAll: '/api/download_all',
 
   pollIntervalMs: 2000,            // 等待结果时的轮询间隔
@@ -72,11 +73,12 @@ const els = {
   gaugeInput: $('gaugeInput'),
   settingsPage: $('settingsPage'), btnSettingsClose: $('btnSettingsClose'),
   csvFile: $('csvFile'), btnUploadCsv: $('btnUploadCsv'), siteList: $('siteList'),
-  tabSites: $('tabSites'), tabOutput: $('tabOutput'), tabServer: $('tabServer'),
-  panelSites: $('panelSites'), panelOutput: $('panelOutput'), panelServer: $('panelServer'),
+  tabSites: $('tabSites'), tabOutput: $('tabOutput'), tabServer: $('tabServer'), tabContinuous: $('tabContinuous'),
+  panelSites: $('panelSites'), panelOutput: $('panelOutput'), panelServer: $('panelServer'), panelContinuous: $('panelContinuous'),
   btnToggleDownload: $('btnToggleDownload'), btnPickDir: $('btnPickDir'),
   downloadDirName: $('downloadDirName'), btnSaveOutput: $('btnSaveOutput'),
   serverAddrSetting: $('serverAddrSetting'), btnSaveServer: $('btnSaveServer'),
+  intervalSeconds: $('intervalSeconds'), detectCount: $('detectCount'), btnSaveContinuous: $('btnSaveContinuous'),
 };
 
 /* ---------- 状态 ---------- */
@@ -574,11 +576,27 @@ async function pollOnce() {
     const res = await fetch(apiUrl(CONFIG.apiResult), { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const d = await res.json();
-    if (!d || d.ready !== true) return;        // 服务器尚未返回结果，继续等待
-    showResult(d);
-    if (state.mode === 'single') {             // 单次检测：拿到结果即完成
-      setMode('idle');
-      stopPolling();
+
+    if (d && d.ready === true) {
+      showResult(d);
+    }
+
+    if (state.mode === 'single') {
+      // 单次检测：拿到结果即完成
+      if (d && d.ready === true) {
+        setMode('idle');
+        stopPolling();
+      }
+    } else if (state.mode === 'continuous') {
+      // 连续检测：检查任务是否已结束（次数完成或中断）
+      const sres = await fetch(apiUrl(CONFIG.apiStatus), { cache: 'no-store' });
+      if (sres.ok) {
+        const s = await sres.json();
+        if (s.task_running === false) {
+          setMode('idle');
+          stopPolling();
+        }
+      }
     }
   } catch (err) {
     console.warn('结果数据获取失败：', err);
@@ -708,7 +726,7 @@ const gauge = {
  * ========================================================= */
 async function openSettings() {
   els.settingsPage.classList.remove('hidden');
-  await Promise.all([loadSites(), loadOutputSettings()]);
+  await Promise.all([loadSites(), loadOutputSettings(), loadContinuousSettings()]);
 }
 
 function closeSettings() {
@@ -718,15 +736,47 @@ function closeSettings() {
 /* 设置页 tab 切换 */
 function switchSettingsTab(which) {
   const tabs = {
-    sites:  [els.tabSites,  els.panelSites],
-    output: [els.tabOutput, els.panelOutput],
-    server: [els.tabServer, els.panelServer],
+    sites:      [els.tabSites,      els.panelSites],
+    output:     [els.tabOutput,     els.panelOutput],
+    server:     [els.tabServer,     els.panelServer],
+    continuous: [els.tabContinuous, els.panelContinuous],
   };
   for (const key in tabs) {
     const [tab, panel] = tabs[key];
     const active = key === which;
     tab.classList.toggle('active', active);
     panel.classList.toggle('hidden', !active);
+  }
+}
+
+/* 连续检测设置 */
+async function loadContinuousSettings() {
+  try {
+    const res = await fetch(apiUrl(CONFIG.apiContinuousSettings), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    els.intervalSeconds.value = d.interval_seconds || 0;
+    els.detectCount.value = d.count || 0;
+  } catch (err) {
+    console.warn('获取连续检测设置失败：', err);
+  }
+}
+
+async function saveContinuousSettings() {
+  const settings = {
+    interval_seconds: Math.max(0, parseInt(els.intervalSeconds.value, 10) || 0),
+    count: Math.max(0, parseInt(els.detectCount.value, 10) || 0),
+  };
+  try {
+    const res = await fetch(apiUrl(CONFIG.apiContinuousSettings), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    alert('保存成功');
+  } catch (err) {
+    alert('保存失败：' + err.message);
   }
 }
 
@@ -982,6 +1032,7 @@ function init() {
   els.tabSites.addEventListener('click', () => switchSettingsTab('sites'));
   els.tabOutput.addEventListener('click', () => switchSettingsTab('output'));
   els.tabServer.addEventListener('click', () => switchSettingsTab('server'));
+  els.tabContinuous.addEventListener('click', () => switchSettingsTab('continuous'));
   els.btnUploadCsv.addEventListener('click', () => els.csvFile.click());
   els.csvFile.addEventListener('change', () => {
     if (els.csvFile.files.length) {
@@ -996,6 +1047,7 @@ function init() {
   els.btnPickDir.addEventListener('click', pickDownloadDir);
   els.btnSaveOutput.addEventListener('click', saveOutputSettings);
   els.btnSaveServer.addEventListener('click', saveServerAddr);
+  els.btnSaveContinuous.addEventListener('click', saveContinuousSettings);
 
   setConn(false, '未连接');
   setMode('idle');

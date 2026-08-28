@@ -137,6 +137,7 @@
         <button id="tabSites" class="tab active">边坡设置</button>
         <button id="tabOutput" class="tab">输出文件设置</button>
         <button id="tabServer" class="tab">服务器设置</button>
+        <button id="tabContinuous" class="tab">连续检测设置</button>
       </nav>
       <div class="settings-body">
         <div id="panelSites" class="settings-panel">
@@ -170,6 +171,20 @@
           </div>
           <button id="btnSaveServer" class="btn primary">保存服务器地址</button>
           <p class="hint">保存后，下次打开页面会自动连接该服务器，无需手动连接。</p>
+        </div>
+        <div id="panelContinuous" class="settings-panel hidden">
+          <div class="output-setting">
+            <span class="info-label">分割间隔</span>
+            <input id="intervalSeconds" type="number" min="0" step="1" placeholder="秒，0=不间隔">
+            <span class="unit">秒</span>
+          </div>
+          <div class="output-setting">
+            <span class="info-label">分割次数</span>
+            <input id="detectCount" type="number" min="0" step="1" placeholder="次，0=无限">
+            <span class="unit">次</span>
+          </div>
+          <button id="btnSaveContinuous" class="btn primary">保存设置</button>
+          <p class="hint">间隔=0 且 次数=0：一直连续分割，分割完立即下一次。间隔=60、次数=10：每 60 秒分割一次，共 10 次后自动停止。</p>
         </div>
       </div>
     </div>
